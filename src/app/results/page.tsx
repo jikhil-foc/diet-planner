@@ -1,5 +1,6 @@
 "use client";
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
 import Box from "@mui/material/Box";
 import Paper from "@mui/material/Paper";
@@ -8,7 +9,7 @@ import Alert from "@mui/material/Alert";
 import CircularProgress from "@mui/material/CircularProgress";
 import Card from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
-import Grid from "@mui/material/Grid";
+// using CSS grid via Box for layout to avoid Grid type issues
 import Divider from "@mui/material/Divider";
 import Button from "@mui/material/Button";
 import RestaurantMenuIcon from "@mui/icons-material/RestaurantMenu";
@@ -17,9 +18,44 @@ import BrunchDiningIcon from "@mui/icons-material/BrunchDining";
 import LunchDiningIcon from "@mui/icons-material/LunchDining";
 import DinnerDiningIcon from "@mui/icons-material/DinnerDining";
 
+type Food = {
+  name: string;
+  calories: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+};
+
+type DietSection = {
+  food: Food;
+};
+
+type DietKey = "breakfast" | "midbreakfast" | "lunch" | "snacks" | "dinner";
+
+type DietData = Partial<Record<DietKey, DietSection>>;
+
 export default function ResultsPage() {
+  return (
+    <Suspense
+      fallback={
+        <Box
+          minHeight="100vh"
+          display="flex"
+          alignItems="center"
+          justifyContent="center"
+        >
+          <CircularProgress color="primary" />
+        </Box>
+      }
+    >
+      <ResultsContent />
+    </Suspense>
+  );
+}
+
+function ResultsContent() {
   const searchParams = useSearchParams();
-  const [dietData, setDietData] = useState<any | null>(null);
+  const [dietData, setDietData] = useState<DietData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -43,7 +79,7 @@ export default function ResultsPage() {
       .then(async (res) => {
         if (!res.ok) throw new Error("Failed to fetch diet plan");
         const data = await res.json();
-        setDietData(data.data?.diet || null);
+        setDietData((data.data?.diet as DietData) || null);
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
@@ -75,7 +111,26 @@ export default function ResultsPage() {
       label: "Dinner",
       icon: <DinnerDiningIcon sx={{ color: "#6366f1", fontSize: 32 }} />,
     },
-  ];
+  ] as const satisfies ReadonlyArray<{
+    key: DietKey;
+    label: string;
+    icon: ReactNode;
+  }>;
+
+  const totals = useMemo(() => {
+    const initial = { calories: 0, protein: 0, carbs: 0, fat: 0 };
+    if (!dietData) return initial;
+    return sectionNames.reduce((acc, { key }) => {
+      const food = dietData?.[key]?.food;
+      if (food) {
+        acc.calories += food.calories;
+        acc.protein += food.protein;
+        acc.carbs += food.carbs;
+        acc.fat += food.fat;
+      }
+      return acc;
+    }, initial);
+  }, [dietData, sectionNames]);
 
   return (
     <Box
@@ -114,48 +169,25 @@ export default function ResultsPage() {
           {!loading && !error && dietData && (
             <Box display="flex" gap={2} alignItems="center" mt={1}>
               <Typography variant="body2" color="text.secondary">
-                Total Calories:{" "}
-                {Object.values(dietData).reduce(
-                  (sum: number, section: any) =>
-                    sum + (section?.food?.calories || 0),
-                  0
-                )}
+                Total Calories: {totals.calories}
               </Typography>
               <Typography variant="body2" color="text.disabled">
                 •
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                Protein:{" "}
-                {Object.values(dietData).reduce(
-                  (sum: number, section: any) =>
-                    sum + (section?.food?.protein || 0),
-                  0
-                )}
-                g
+                Protein: {totals.protein}g
               </Typography>
               <Typography variant="body2" color="text.disabled">
                 •
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                Carbs:{" "}
-                {Object.values(dietData).reduce(
-                  (sum: number, section: any) =>
-                    sum + (section?.food?.carbs || 0),
-                  0
-                )}
-                g
+                Carbs: {totals.carbs}g
               </Typography>
               <Typography variant="body2" color="text.disabled">
                 •
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                Fat:{" "}
-                {Object.values(dietData).reduce(
-                  (sum: number, section: any) =>
-                    sum + (section?.food?.fat || 0),
-                  0
-                )}
-                g
+                Fat: {totals.fat}g
               </Typography>
             </Box>
           )}
@@ -190,25 +222,19 @@ export default function ResultsPage() {
           </Alert>
         )}
         {!loading && !error && dietData && (
-          <Grid container spacing={3} mt={1} alignItems="stretch">
+          <Box
+            display="grid"
+            gridTemplateColumns={{ xs: "1fr", sm: "1fr 1fr" }}
+            gap={3}
+            mt={1}
+            alignItems="stretch"
+            width="100%"
+          >
             {sectionNames.map(({ key, label, icon }) => {
-              const food = dietData[key]?.food;
+              const food = dietData?.[key]?.food;
               if (!food) return null;
               return (
-                // @ts-ignore
-                <Grid
-                  item
-                  xs={12}
-                  sm={6}
-                  md={6}
-                  key={key}
-                  style={{
-                    display: "flex",
-                    height: "100%",
-                    width: "100%",
-                    boxSizing: "border-box",
-                  }}
-                >
+                <Box key={key} sx={{ display: "flex" }}>
                   <Card
                     sx={{
                       borderRadius: 4,
@@ -320,10 +346,10 @@ export default function ResultsPage() {
                       </Box>
                     </CardContent>
                   </Card>
-                </Grid>
+                </Box>
               );
             })}
-          </Grid>
+          </Box>
         )}
       </Paper>
     </Box>
